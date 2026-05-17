@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
 <title>Netherrack</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link rel="icon" type="image/x-icon" href="/favicon.png">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet"/>
 <style>
@@ -272,6 +271,16 @@ body::before {
 }
 .user-avatar img { width: 100%; height: 100%; object-fit: cover; }
 
+/* Source status indicator */
+.src-status {
+  font-size: 0.65rem; padding: 2px 7px; border-radius: 100px;
+  font-family: var(--font-head); font-weight: 700; letter-spacing: 0.08em;
+  display: none; align-items: center; gap: 4px;
+}
+.src-status.show { display: inline-flex; }
+.src-status.ok   { background: rgba(62,207,122,0.12); color: var(--green); border: 1px solid rgba(62,207,122,0.2); }
+.src-status.err  { background: rgba(255,61,61,0.1);   color: var(--accent); border: 1px solid rgba(255,61,61,0.18); }
+
 /* ═══════════════ LAYOUT ═══════════════ */
 #layout { display: flex; max-width: 1600px; margin: 0 auto; width: 100%; }
 
@@ -373,6 +382,17 @@ body::before {
 .stats-bar-item svg { width: 12px; height: 12px; }
 .stats-bar-sep { width: 1px; height: 13px; background: var(--border); }
 
+/* Source health badges in stats bar */
+.src-health { display: flex; gap: 5px; flex-wrap: wrap; margin-left: auto; }
+.src-health-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  display: inline-block; flex-shrink: 0;
+}
+.src-health-item {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 0.65rem; color: var(--text3);
+}
+
 /* ═══════════════ MEDIA GRID ═══════════════ */
 #media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
 #media-grid.list-view { grid-template-columns: 1fr; gap: 7px; }
@@ -462,8 +482,6 @@ body::before {
 .card-score { display: flex; align-items: center; gap: 3px; font-size: 0.7rem; color: var(--text3); }
 .card-score svg { width: 11px; height: 11px; color: var(--yellow); fill: var(--yellow); }
 .card-views { font-size: 0.68rem; color: var(--text3); }
-
-/* Kemono creator badge */
 .card-creator {
   font-size: 0.68rem; color: var(--purple); font-weight: 600;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 3px;
@@ -575,7 +593,6 @@ body::before {
 }
 .volume-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 11px; background: #fff; border-radius: 50%; }
 
-/* Lightbox sidebar */
 .lightbox-sidebar {
   width: 280px; flex-shrink: 0; display: flex; flex-direction: column;
   gap: 8px; overflow-y: auto; max-height: 96vh;
@@ -813,6 +830,7 @@ body::before {
 .toast-info    .toast-dot { background: var(--blue); }
 .toast-success .toast-dot { background: var(--green); }
 .toast-error   .toast-dot { background: var(--accent); }
+.toast-warn    .toast-dot { background: var(--yellow); }
 .toast-text { font-size: 0.81rem; color: var(--text); }
 
 /* Footer */
@@ -863,7 +881,6 @@ body::before {
     overflow: hidden; background: var(--bg2);
   }
   .lightbox-media { flex: 1; border-radius: 0; border: none; background: #000; }
-  /* BUG FIX: sidebar on mobile must scroll normally, not use grid */
   .lightbox-sidebar {
     width: 100%; max-height: 42vh; border-top: 1px solid var(--border);
     border-radius: 0; background: var(--bg2); padding: 8px;
@@ -1021,6 +1038,7 @@ body::before {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
           Page <strong id="stat-page">1</strong>
         </div>
+        <div class="src-health" id="src-health"></div>
       </div>
 
       <div class="quick-filters">
@@ -1222,21 +1240,27 @@ onAuthStateChanged(auth, (user) => {
 
 <script>
 /* ═══════════════════════════════════════════════
-   CONSTANTS
+   CONSTANTS & CONFIG
 ═══════════════════════════════════════════════ */
 const PROTECTED_BLACKLIST = ['minor','child','loli','shota','cub','young','teenager'];
 const R34_KEY  = '23994c234223680f1a32d5c3e80ac4515fb03fc27034d8372bfdcc01bb6ffda2341f0c86089dd87ef5ef4f9ba21d5642c4f4f87b3018678ca18626dd27fc4bb0';
 const R34_USER = '1975982';
+
+// ── CORS proxy configuration ──────────────────────────────────────────────
+// corsproxy.io is a free, no-auth CORS proxy. If it's down, swap the URL.
+// Alternative: 'https://api.allorigins.win/raw?url='
+const CORS_PROXY  = 'https://corsproxy.io/?url=';
+
 const KEMONO_BASE = 'https://kemono.cr/api/v1';
 const COOMER_BASE = 'https://coomer.su/api/v1';
 const POSTS_PER_LOAD = 40;
 const MAX_RECENTS = 12;
+const FETCH_TIMEOUT_MS = 12000; // 12s per request
 
 const QUICK_TAGS = [
   'solo','duo','female','male','big_breasts','blonde_hair','brunette',
   'outdoors','lingerie','curvy','cleavage','bikini'
 ];
-
 const SIDEBAR_TAGS = [
   {tag:'solo',       label:'Solo'},
   {tag:'big_breasts',label:'Big Breasts'},
@@ -1245,7 +1269,6 @@ const SIDEBAR_TAGS = [
   {tag:'outdoors',   label:'Outdoor'},
   {tag:'duo',        label:'Duo'},
 ];
-
 const PLATFORM_CONFIG = {
   all:    {label:'All',    color:'#ff3d3d', dot:'#ff3d3d'},
   r34:    {label:'Rule34', color:'#4d7ef5', dot:'#4d7ef5'},
@@ -1267,12 +1290,73 @@ let isLoading      = false;
 let hasMore        = true;
 let pageCount      = 1;
 
+// Track which sources succeeded/failed last fetch
+let srcStatus = { r34: null, e621: null, kemono: null, coomer: null };
+
 let userBlacklist  = JSON.parse(localStorage.getItem('nr_blacklist')  || '[]');
 let favorites      = JSON.parse(localStorage.getItem('nr_favorites')  || '[]');
 let searchHistory  = JSON.parse(localStorage.getItem('nr_history')    || '[]');
 let recentlyViewed = JSON.parse(localStorage.getItem('nr_recents')    || '[]');
 
 let acDebounce = null;
+
+/* ═══════════════════════════════════════════════
+   HELPERS
+═══════════════════════════════════════════════ */
+
+/**
+ * fetch() with a timeout. Rejects if the request takes longer than ms.
+ */
+async function fetchWithTimeout(url, options = {}, ms = FETCH_TIMEOUT_MS) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const res = await fetch(url, { ...options, signal: ctrl.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
+/**
+ * Wrap a URL in the CORS proxy.
+ */
+function proxied(url) {
+  return CORS_PROXY + encodeURIComponent(url);
+}
+
+/**
+ * Safely extract posts array from a Kemono/Coomer JSON response.
+ * Their API returns either an array directly, or { results: [...] }.
+ */
+function extractPostsArray(data) {
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.results)) return data.results;
+  return [];
+}
+
+function getFileType(url) {
+  if (!url) return 'image';
+  const ext = url.split('?')[0].split('.').pop().toLowerCase();
+  if (['mp4','webm','ogv'].includes(ext)) return 'video';
+  if (ext === 'gif') return 'gif';
+  return 'image';
+}
+
+function shuffleArray(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function escHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
 /* ═══════════════════════════════════════════════
    AGE GATE
@@ -1345,7 +1429,7 @@ function renderQuickTags() {
 
 function renderSidebarTags() {
   const c = document.getElementById('sidebar-tags'); if (!c) return;
-  c.innerHTML = SIDEBAR_TAGS.map(({tag,label}) =>
+  c.innerHTML = SIDEBAR_TAGS.map(({tag, label}) =>
     `<div class="sidebar-item" onclick="quickTag('${tag}');sidebarNav('tag',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
       ${label}
@@ -1357,6 +1441,25 @@ function updateStatsBar() {
   document.getElementById('stat-total').textContent = allPosts.length.toLocaleString();
   document.getElementById('stat-favs').textContent  = favorites.length;
   document.getElementById('stat-page').textContent  = pageCount;
+  renderSrcHealth();
+}
+
+function renderSrcHealth() {
+  const el = document.getElementById('src-health');
+  if (!el) return;
+  const srcs = currentSource === 'all'
+    ? ['r34','e621','kemono','coomer']
+    : [currentSource];
+  el.innerHTML = srcs.map(s => {
+    const st = srcStatus[s];
+    if (st === null) return '';
+    const color = st ? PLATFORM_CONFIG[s].dot : '#ff3d3d';
+    const label = PLATFORM_CONFIG[s].label;
+    return `<span class="src-health-item">
+      <span class="src-health-dot" style="background:${color}"></span>
+      ${label}
+    </span>`;
+  }).join('');
 }
 
 /* ═══════════════════════════════════════════════
@@ -1364,11 +1467,11 @@ function updateStatsBar() {
 ═══════════════════════════════════════════════ */
 function mobileNav(tab) {
   document.querySelectorAll('.mnav-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('mnav-' + tab)?.classList.add('active');
-  if (tab === 'home')   { resetSearch(); document.getElementById('mnav-home').classList.add('active'); }
-  if (tab === 'search') { openMobileSearch(); document.getElementById('mnav-home').classList.add('active'); }
-  if (tab === 'favs')   { toggleFavorites(); document.getElementById('mnav-home').classList.add('active'); }
-  if (tab === 'filter') { toggleBlacklist(); document.getElementById('mnav-home').classList.add('active'); }
+  document.getElementById('mnav-home').classList.add('active');
+  if (tab === 'home')   resetSearch();
+  if (tab === 'search') openMobileSearch();
+  if (tab === 'favs')   toggleFavorites();
+  if (tab === 'filter') toggleBlacklist();
 }
 function openMobileSearch() {
   document.getElementById('mobile-search-sheet').classList.add('open');
@@ -1436,19 +1539,20 @@ function addToHistory(q) {
 }
 
 /* ═══════════════════════════════════════════════
-   AUTOCOMPLETE (Rule34 tags only — reliable CORS)
+   AUTOCOMPLETE (Rule34 tags — native CORS support)
 ═══════════════════════════════════════════════ */
 document.getElementById('search-input').addEventListener('input', function() {
   clearTimeout(acDebounce);
   const val = this.value.trim();
   if (!val || val.length < 2) { closeAutocomplete(); return; }
-  acDebounce = setTimeout(() => fetchAutocomplete(val), 300);
+  acDebounce = setTimeout(() => fetchAutocomplete(val), 350);
 });
 
 async function fetchAutocomplete(q) {
   try {
-    const url  = `https://api.rule34.xxx/index.php?page=dapi&s=tag&q=index&json=1&name_pattern=${encodeURIComponent(q + '%')}&limit=8&order=count`;
-    const res  = await fetch(url);
+    const url  = `https://api.rule34.xxx/index.php?page=dapi&s=tag&q=index&json=1&name_pattern=${encodeURIComponent(q)}%25&limit=8&order=count`;
+    const res  = await fetchWithTimeout(url, {}, 5000);
+    if (!res.ok) { closeAutocomplete(); return; }
     const data = await res.json();
     if (!Array.isArray(data) || !data.length) { closeAutocomplete(); return; }
     renderAutocomplete(data);
@@ -1462,13 +1566,13 @@ function renderAutocomplete(tags) {
     html += `<div class="ac-section-label">Recent</div>
       <div class="ac-history-chips">
         ${searchHistory.slice(0,5).map(h =>
-          `<span class="ac-chip" onclick="quickTag('${h}');closeAutocomplete()">${h}</span>`
+          `<span class="ac-chip" onclick="quickTag('${escHtml(h)}');closeAutocomplete()">${escHtml(h)}</span>`
         ).join('')}
       </div><div class="ac-divider"></div>`;
   }
   html += `<div class="ac-section-label">Suggestions</div>`;
   html += tags.map(t =>
-    `<div class="ac-item" onclick="quickTag('${t.name}');closeAutocomplete()">
+    `<div class="ac-item" onclick="quickTag('${escHtml(t.name)}');closeAutocomplete()">
       <span class="ac-item-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></span>
       <span>${escHtml(t.name.replace(/_/g,' '))}</span>
       <span class="ac-item-count">${Number(t.count).toLocaleString()}</span>
@@ -1510,21 +1614,34 @@ function setSpinner(on) {
 function setupPullToRefresh() {
   let startY = 0; let pulling = false;
   const indicator = document.getElementById('ptr-indicator');
-  document.addEventListener('touchstart', e => { if (window.scrollY === 0) startY = e.touches[0].clientY; }, {passive:true});
-  document.addEventListener('touchmove', e => { if (!startY) return; if (e.touches[0].clientY - startY > 60 && !isLoading) { pulling = true; indicator.classList.add('active'); } }, {passive:true});
-  document.addEventListener('touchend', () => { if (pulling) { pulling = false; indicator.classList.remove('active'); doSearch(); } startY = 0; }, {passive:true});
+  document.addEventListener('touchstart', e => {
+    if (window.scrollY === 0) startY = e.touches[0].clientY;
+  }, {passive:true});
+  document.addEventListener('touchmove', e => {
+    if (!startY) return;
+    if (e.touches[0].clientY - startY > 60 && !isLoading) { pulling = true; indicator.classList.add('active'); }
+  }, {passive:true});
+  document.addEventListener('touchend', () => {
+    if (pulling) { pulling = false; indicator.classList.remove('active'); doSearch(); }
+    startY = 0;
+  }, {passive:true});
 }
 
 /* ═══════════════════════════════════════════════
-   BLACKLIST
+   BLACKLIST CHECK
 ═══════════════════════════════════════════════ */
 function isPostBlacklisted(post) {
-  const tags  = (post.tags || '').toLowerCase();
+  const tags  = (post.tags  || '').toLowerCase();
   const title = (post.title || '').toLowerCase();
   const bl    = [...PROTECTED_BLACKLIST, ...userBlacklist.map(t => t.toLowerCase())];
   return bl.some(b => tags.includes(b) || title.includes(b));
 }
-function buildBLParam() {
+
+/**
+ * Build a blacklist tag string for APIs that accept it inline
+ * (Rule34, e621). Each blocked tag prefixed with '-'.
+ */
+function buildBLTags() {
   return [...PROTECTED_BLACKLIST, ...userBlacklist].map(t => `-${t}`).join(' ');
 }
 
@@ -1535,17 +1652,28 @@ async function fetchAndRender(append = false) {
   if (isLoading) return;
   isLoading = true;
 
-  let posts = [];
-  const sources = currentSource === 'all' ? ['r34','e621','kemono','coomer'] : [currentSource];
+  const sources = currentSource === 'all'
+    ? ['r34','e621','kemono','coomer']
+    : [currentSource];
 
-  try {
-    const results = await Promise.allSettled(sources.map(src => fetchSource(src)));
-    results.forEach(r => { if (r.status === 'fulfilled') posts = posts.concat(r.value); });
-  } catch(err) { showToast('error', 'Fetch error'); }
+  let posts = [];
+  const results = await Promise.allSettled(sources.map(src => fetchSource(src)));
+
+  results.forEach((r, i) => {
+    const src = sources[i];
+    if (r.status === 'fulfilled') {
+      srcStatus[src] = true;
+      posts = posts.concat(r.value);
+    } else {
+      srcStatus[src] = false;
+      console.warn(`[${src}] fetch failed:`, r.reason?.message || r.reason);
+    }
+  });
 
   if (currentSource === 'all') posts = shuffleArray(posts);
+
   const clean = posts.filter(p => !isPostBlacklisted(p));
-  if (clean.length < 8) hasMore = false;
+  if (clean.length < 4) hasMore = false;
 
   if (append) allPosts = allPosts.concat(clean);
   else        allPosts = clean;
@@ -1558,17 +1686,8 @@ async function fetchAndRender(append = false) {
   document.getElementById('sentinel-end').classList.toggle('show', !hasMore && allPosts.length > 0);
 }
 
-function shuffleArray(arr) {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
 async function fetchSource(src) {
-  switch(src) {
+  switch (src) {
     case 'r34':    return fetchR34();
     case 'e621':   return fetchE621();
     case 'kemono': return fetchKemono();
@@ -1577,172 +1696,206 @@ async function fetchSource(src) {
   }
 }
 
-/* ─── Rule34 / Gelbooru-compatible API ─── */
+/* ─── Rule34 ──────────────────────────────────────────────────────────────
+   FIX: Build tags correctly — do NOT double-underscore-replace.
+   Rule34 wants tags separated by spaces, negative tags as -tag.
+   Sort modifier is a special "sort:score:desc" meta-tag.
+─────────────────────────────────────────────────────────────────────────── */
 async function fetchR34() {
-  const bl   = buildBLParam();
-  const sort = document.getElementById('sort-select').value;
-  const sortP = sort === 'score' ? 'sort:score:desc' : '';
-  const rawTags = [sortP, currentQuery, bl].filter(Boolean).join(' ').trim();
-  // Normalise spaces to underscores for Rule34 tag format
-  const tags = rawTags.replace(/ (?!-)/g, match => '_').replace(/_-/g, ' -');
-  const url  = `https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&limit=${POSTS_PER_LOAD}&pid=${currentPage * POSTS_PER_LOAD}&tags=${encodeURIComponent(rawTags)}&api_key=${R34_KEY}&user_id=${R34_USER}`;
+  const sort    = document.getElementById('sort-select').value;
+  const bl      = buildBLTags();                           // e.g. "-loli -shota"
+  const sortTag = sort === 'score' ? 'sort:score:desc' : '';
+  // User query: normalise spaces → underscores (Rule34 tag format)
+  const userTag = currentQuery
+    ? currentQuery.trim().replace(/\s+/g, '_')
+    : '';
+  // Join non-empty parts
+  const tags = [sortTag, userTag, bl].filter(Boolean).join('+');
+
+  const url = `https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&json=1`
+    + `&limit=${POSTS_PER_LOAD}`
+    + `&pid=${currentPage}`                                // Rule34 uses raw page, not byte offset
+    + `&tags=${encodeURIComponent(tags)}`
+    + `&api_key=${R34_KEY}&user_id=${R34_USER}`;
+
   try {
-    const res  = await fetch(url);
+    const res = await fetchWithTimeout(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (!Array.isArray(data)) return [];
     return data.map(p => ({
-      id: p.id, source: 'r34', sourceBadge: 'R34', badgeClass: 'badge-r34',
-      preview: p.preview_url || p.sample_url || p.file_url,
-      sample:  p.sample_url  || p.file_url,
-      full:    p.file_url,
-      tags: p.tags || '', score: p.score || 0,
-      type: getFileType(p.file_url),
-      width: p.width, height: p.height,
-      title: '', views: 0, duration: '',
-      creator: '', service: '',
-      sourceUrl: `https://rule34.xxx/index.php?page=post&s=view&id=${p.id}`,
+      id:         p.id,
+      source:     'r34',
+      sourceBadge:'R34',
+      badgeClass: 'badge-r34',
+      preview:    p.preview_url || p.sample_url || p.file_url,
+      sample:     p.sample_url  || p.file_url,
+      full:       p.file_url,
+      tags:       p.tags || '',
+      score:      p.score || 0,
+      type:       getFileType(p.file_url),
+      width:      p.width,
+      height:     p.height,
+      title:      '',
+      views:      0,
+      duration:   '',
+      creator:    '',
+      service:    '',
+      sourceUrl:  `https://rule34.xxx/index.php?page=post&s=view&id=${p.id}`,
     }));
-  } catch { return []; }
+  } catch (err) {
+    console.warn('[r34]', err.message);
+    return [];
+  }
 }
 
-/* ─── e621 ─── */
+/* ─── e621 ────────────────────────────────────────────────────────────────
+   FIX: Remove the User-Agent header — browsers cannot set it and it causes
+   a CORS preflight that e621 rejects. Their API works without it from browsers.
+─────────────────────────────────────────────────────────────────────────── */
 async function fetchE621() {
-  const bl   = [...PROTECTED_BLACKLIST, ...userBlacklist].map(t => `-${t}`).join(' ');
-  const q    = currentQuery ? currentQuery.replace(/ /g, '_') : '';
+  const bl   = buildBLTags();
+  const q    = currentQuery ? currentQuery.trim().replace(/\s+/g, '_') : '';
   const tags = [q, bl, 'rating:e'].filter(Boolean).join(' ');
-  const url  = `https://e621.net/posts.json?limit=40&page=${currentPage + 1}&tags=${encodeURIComponent(tags)}&_client=Netherrack%2F1.0`;
+  const url  = `https://e621.net/posts.json?limit=40&page=${currentPage + 1}&tags=${encodeURIComponent(tags)}`;
+
   try {
-    const res  = await fetch(url, { headers: { 'User-Agent': 'Netherrack/1.0' } });
+    const res  = await fetchWithTimeout(url);         // no User-Agent header
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (!data.posts) return [];
     return data.posts.map(p => {
       const file = p.file || {};
       return {
-        id: p.id, source: 'e621', sourceBadge: 'E621', badgeClass: 'badge-e621',
-        preview: (p.preview || {}).url || file.url,
-        sample:  (p.sample  || {}).url || file.url,
-        full:    file.url,
-        tags: Object.values(p.tags || {}).flat().join(' '),
-        score: (p.score || {}).total || 0,
-        type: getFileType(file.url || ''),
-        width: file.width, height: file.height,
-        title: '', views: 0, duration: '',
-        creator: '', service: '',
-        sourceUrl: `https://e621.net/posts/${p.id}`,
+        id:         p.id,
+        source:     'e621',
+        sourceBadge:'E621',
+        badgeClass: 'badge-e621',
+        preview:    (p.preview || {}).url || file.url,
+        sample:     (p.sample  || {}).url || file.url,
+        full:       file.url,
+        tags:       Object.values(p.tags || {}).flat().join(' '),
+        score:      (p.score || {}).total || 0,
+        type:       getFileType(file.url || ''),
+        width:      file.width,
+        height:     file.height,
+        title:      '',
+        views:      0,
+        duration:   '',
+        creator:    '',
+        service:    '',
+        sourceUrl:  `https://e621.net/posts/${p.id}`,
       };
     }).filter(p => p.preview);
-  } catch { return []; }
+  } catch (err) {
+    console.warn('[e621]', err.message);
+    return [];
+  }
 }
 
-/* ─── Kemono ─── */
+/* ─── Kemono ──────────────────────────────────────────────────────────────
+   FIX: Route all requests through CORS proxy.
+   Kemono's API endpoint for post search: GET /v1/posts?q=...&o=...
+   The offset is page * 50 (their page size).
+─────────────────────────────────────────────────────────────────────────── */
 async function fetchKemono() {
+  const offset = currentPage * 50;
+  const base   = KEMONO_BASE + '/posts';
+  const params = currentQuery
+    ? `?q=${encodeURIComponent(currentQuery)}&o=${offset}`
+    : `?o=${offset}`;
+
   try {
-    let posts = [];
-
-    if (currentQuery) {
-      // Search posts by query (used as creator name search via /creators.txt or post search)
-      // Kemono has /v1/{service}/user/{id}/posts — we'll use recent posts + client filter
-      const url = `${KEMONO_BASE}/posts?q=${encodeURIComponent(currentQuery)}&o=${currentPage * 50}`;
-      const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-      if (res.ok) {
-        const data = await res.json();
-        posts = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : []);
-      }
-    } else {
-      // Recent posts
-      const url = `${KEMONO_BASE}/posts?o=${currentPage * 50}`;
-      const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-      if (res.ok) {
-        const data = await res.json();
-        posts = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : []);
-      }
-    }
-
+    const url = proxied(base + params);
+    const res = await fetchWithTimeout(url, { headers: { 'Accept': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const posts = extractPostsArray(data);
     return posts.flatMap(p => normaliseKemonoPost(p, 'kemono'));
-  } catch { return []; }
+  } catch (err) {
+    console.warn('[kemono]', err.message);
+    return [];
+  }
 }
 
-/* ─── Coomer ─── */
+/* ─── Coomer ──────────────────────────────────────────────────────────────
+   FIX: Same as Kemono — route through CORS proxy.
+   Coomer is a sister site with the same API shape.
+─────────────────────────────────────────────────────────────────────────── */
 async function fetchCoomer() {
+  const offset = currentPage * 50;
+  const base   = COOMER_BASE + '/posts';
+  const params = currentQuery
+    ? `?q=${encodeURIComponent(currentQuery)}&o=${offset}`
+    : `?o=${offset}`;
+
   try {
-    let posts = [];
-
-    if (currentQuery) {
-      const url = `${COOMER_BASE}/posts?q=${encodeURIComponent(currentQuery)}&o=${currentPage * 50}`;
-      const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-      if (res.ok) {
-        const data = await res.json();
-        posts = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : []);
-      }
-    } else {
-      const url = `${COOMER_BASE}/posts?o=${currentPage * 50}`;
-      const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-      if (res.ok) {
-        const data = await res.json();
-        posts = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : []);
-      }
-    }
-
+    const url = proxied(base + params);
+    const res = await fetchWithTimeout(url, { headers: { 'Accept': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const posts = extractPostsArray(data);
     return posts.flatMap(p => normaliseKemonoPost(p, 'coomer'));
-  } catch { return []; }
+  } catch (err) {
+    console.warn('[coomer]', err.message);
+    return [];
+  }
 }
 
-/* ─── Kemono/Coomer post normaliser ─── */
+/* ─── Kemono/Coomer post normaliser ──────────────────────────────────────
+   Media files are served from the CDN directly (no CORS issue for images).
+   Thumbnails exist at /thumbnail/data/<path>.
+─────────────────────────────────────────────────────────────────────────── */
 function normaliseKemonoPost(p, sourceKey) {
-  const isCoomer = sourceKey === 'coomer';
-  const base = isCoomer ? 'https://coomer.su' : 'https://kemono.cr';
-  const badge = isCoomer ? 'badge-coomer' : 'badge-kemono';
-  const badgeLabel = isCoomer ? 'COOMER' : 'KEMONO';
+  const isCoomer  = sourceKey === 'coomer';
+  const base      = isCoomer ? 'https://coomer.su' : 'https://kemono.cr';
+  const badge     = isCoomer ? 'badge-coomer' : 'badge-kemono';
+  const badgeLabel= isCoomer ? 'COOMER'       : 'KEMONO';
 
-  // Gather all file attachments that look like images/videos
+  // Gather all attachments that have a path
   const allFiles = [];
-  if (p.file && p.file.path) allFiles.push(p.file);
+  if (p.file && p.file.path)           allFiles.push(p.file);
   if (Array.isArray(p.attachments)) {
     p.attachments.forEach(a => { if (a.path) allFiles.push(a); });
   }
 
+  // Keep only image/video extensions
   const mediaFiles = allFiles.filter(f => {
     const ext = (f.path || '').split('.').pop().toLowerCase();
     return ['jpg','jpeg','png','webp','gif','mp4','webm'].includes(ext);
   });
 
   if (!mediaFiles.length) {
-    // Post with no media — still show with placeholder
-    return [{
-      id: `${p.id}_${p.user}`, source: sourceKey, sourceBadge: badgeLabel, badgeClass: badge,
-      preview: '', sample: '', full: '',
-      tags: '', score: 0, type: 'image',
-      title: p.title || '', views: 0, duration: '',
-      creator: p.user || '', service: p.service || '',
-      sourceUrl: `${base}/${p.service}/user/${p.user}/post/${p.id}`,
-    }];
+    // Post has no media — skip it rather than showing a blank card
+    return [];
   }
 
-  // Return one card per media file (up to 4 per post to avoid flooding)
+  // Emit one card per media file, max 4 per post to avoid flooding
   return mediaFiles.slice(0, 4).map((f, i) => {
     const filePath = f.path.startsWith('/') ? f.path : '/' + f.path;
     const fileUrl  = `${base}/data${filePath}`;
     const thumbUrl = `${base}/thumbnail/data${filePath}`;
-    const ext = filePath.split('.').pop().toLowerCase();
-    const type = ['mp4','webm'].includes(ext) ? 'video' : ext === 'gif' ? 'gif' : 'image';
+    const ext      = filePath.split('.').pop().toLowerCase();
+    const type     = ['mp4','webm'].includes(ext) ? 'video' : ext === 'gif' ? 'gif' : 'image';
     return {
-      id: `${p.id}_${p.user}_${i}`, source: sourceKey, sourceBadge: badgeLabel, badgeClass: badge,
-      preview: thumbUrl, sample: fileUrl, full: fileUrl,
-      tags: '', score: 0, type,
-      title: p.title || '',
-      views: 0, duration: '',
-      creator: p.user || '', service: p.service || '',
-      sourceUrl: `${base}/${p.service}/user/${p.user}/post/${p.id}`,
+      id:         `${p.id}_${p.user}_${i}`,
+      source:     sourceKey,
+      sourceBadge: badgeLabel,
+      badgeClass:  badge,
+      preview:    thumbUrl,
+      sample:     fileUrl,
+      full:       fileUrl,
+      tags:       '',
+      score:      0,
+      type,
+      title:      p.title || '',
+      views:      0,
+      duration:   '',
+      creator:    p.user    || '',
+      service:    p.service || '',
+      sourceUrl:  `${base}/${p.service}/user/${p.user}/post/${p.id}`,
     };
   });
-}
-
-function getFileType(url) {
-  if (!url) return 'image';
-  const ext = url.split('?')[0].split('.').pop().toLowerCase();
-  if (['mp4','webm','ogv'].includes(ext)) return 'video';
-  if (ext === 'gif') return 'gif';
-  return 'image';
 }
 
 /* ═══════════════════════════════════════════════
@@ -1761,6 +1914,8 @@ function showSkeletons() {
   setSpinner(false);
 }
 
+const NO_PREVIEW_SVG = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 130'><rect fill='%2313131a' width='200' height='130'/><text x='50%25' y='50%25' fill='%2348485e' text-anchor='middle' dominant-baseline='middle' font-size='12' font-family='sans-serif'>No preview</text></svg>`;
+
 function renderGrid(posts, append = false) {
   const grid = document.getElementById('media-grid');
   if (!append) grid.innerHTML = '';
@@ -1774,10 +1929,11 @@ function renderGrid(posts, append = false) {
     return;
   }
 
-  const batch = append ? posts.slice(-POSTS_PER_LOAD * 6) : posts;
+  const startIdx = append ? (allPosts.length - posts.slice(-POSTS_PER_LOAD * 6).length) : 0;
+  const batch    = append ? posts.slice(-POSTS_PER_LOAD * 6) : posts;
 
   batch.forEach((post, i) => {
-    const globalIdx = append ? (allPosts.length - batch.length + i) : i;
+    const globalIdx = startIdx + i;
     const tagArr    = (post.tags || '').split(/[\s,]+/).filter(Boolean).slice(0, 3);
     const isFaved   = favorites.some(f => f.id === post.id && f.source === post.source);
     const title     = post.title || tagArr.slice(0,2).map(t => t.replace(/_/g,' ')).join(', ');
@@ -1788,13 +1944,13 @@ function renderGrid(posts, append = false) {
     card.style.animationDelay = `${Math.min(i % 16, 12) * 0.025}s`;
     card.dataset.idx = globalIdx;
 
-    const noPreview = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 130'><rect fill='%2313131a' width='200' height='130'/><text x='50%25' y='50%25' fill='%2348485e' text-anchor='middle' dominant-baseline='middle' font-size='12' font-family='sans-serif'>No preview</text></svg>`;
-
     card.innerHTML = `
       <div class="card-thumb">
-        <img class="${post.preview ? 'loading' : ''}" src="${post.preview || noPreview}" alt="${escHtml(title)}" loading="lazy"
+        <img class="${post.preview ? 'loading' : ''}"
+          src="${escHtml(post.preview || NO_PREVIEW_SVG)}"
+          alt="${escHtml(title)}" loading="lazy"
           onload="this.classList.remove('loading');this.classList.add('loaded')"
-          onerror="this.src='${noPreview}';this.classList.remove('loading')"/>
+          onerror="this.src='${NO_PREVIEW_SVG}';this.classList.remove('loading')"/>
         <div class="card-overlay">
           <div class="card-play">
             <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -1802,14 +1958,18 @@ function renderGrid(posts, append = false) {
         </div>
         <span class="card-type-badge ${post.badgeClass}">${post.sourceBadge}</span>
         ${post.duration ? `<span class="card-duration">${post.duration}</span>` : ''}
-        <button class="card-fav-btn ${isFaved ? 'faved' : ''}" onclick="event.stopPropagation();toggleFavoritePost(${postJson},this)" title="Favorite">
-          <svg viewBox="0 0 24 24" fill="${isFaved ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <button class="card-fav-btn ${isFaved ? 'faved' : ''}"
+          onclick="event.stopPropagation();toggleFavoritePost(${postJson},this)"
+          title="Favorite">
+          <svg viewBox="0 0 24 24" fill="${isFaved ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+          </svg>
         </button>
       </div>
       <div class="card-body">
         ${post.creator ? `<div class="card-creator">@${escHtml(post.creator)}${post.service ? ` · ${escHtml(post.service)}` : ''}</div>` : ''}
         ${title ? `<div class="card-title">${escHtml(title)}</div>` : ''}
-        ${tagArr.length ? `<div class="card-tags">${tagArr.map(t=>`<span class="card-tag" onclick="event.stopPropagation();quickTag('${t}')">${t.replace(/_/g,' ')}</span>`).join('')}</div>` : ''}
+        ${tagArr.length ? `<div class="card-tags">${tagArr.map(t => `<span class="card-tag" onclick="event.stopPropagation();quickTag('${t}')">${escHtml(t.replace(/_/g,' '))}</span>`).join('')}</div>` : ''}
         <div class="card-meta">
           <div class="card-score">
             <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
@@ -1825,19 +1985,8 @@ function renderGrid(posts, append = false) {
 }
 
 function updateResultCount(n) {
-  const src = currentSource === 'all' ? 'all sources' : PLATFORM_CONFIG[currentSource]?.label || currentSource;
   document.getElementById('result-count').innerHTML =
     `<strong>${n.toLocaleString()}</strong> posts${currentQuery ? ` for "<strong>${escHtml(currentQuery)}</strong>"` : ''}`;
-}
-
-function fmtViews(n) {
-  if (n >= 1e9) return (n/1e9).toFixed(1)+'B';
-  if (n >= 1e6) return (n/1e6).toFixed(1)+'M';
-  if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
-  return '' + n;
-}
-function escHtml(s) {
-  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 /* ═══════════════════════════════════════════════
@@ -1880,17 +2029,14 @@ function renderRecents() {
   strip.style.display = 'flex';
   inner.innerHTML = recentlyViewed.map(p =>
     `<div class="recent-thumb" onclick="openLightboxForPost(${JSON.stringify(p).replace(/"/g,'&quot;')})">
-      <img src="${p.preview || ''}" loading="lazy" onerror="this.style.opacity=0.3"/>
+      <img src="${escHtml(p.preview || '')}" loading="lazy" onerror="this.style.opacity=0.3"/>
     </div>`
   ).join('');
 }
 function openLightboxForPost(post) {
-  // Find in current filteredPosts or prepend
   let idx = filteredPosts.findIndex(p => p.id === post.id && p.source === post.source);
   if (idx < 0) {
-    // BUG FIX: push to a temp array without clobbering filteredPosts for navigation
-    const tmp = [post, ...filteredPosts];
-    filteredPosts = tmp;
+    filteredPosts = [post, ...filteredPosts];
     idx = 0;
   }
   openLightbox(idx);
@@ -1912,6 +2058,7 @@ function closeLightbox() {
   document.body.style.overflow = '';
   const vid = document.querySelector('#lb-media-area video');
   if (vid) vid.pause();
+  if (window._favLightboxRestore) { window._favLightboxRestore(); window._favLightboxRestore = null; }
 }
 function closeLightboxOnBg(e) {
   if (e.target === document.getElementById('lightbox')) closeLightbox();
@@ -1927,47 +2074,37 @@ function navigateLightbox(dir) {
 }
 
 function renderLightboxContent(slideDir) {
-  const post   = filteredPosts[currentLbIndex];
+  const post = filteredPosts[currentLbIndex];
   if (!post) return;
-  const isFaved = favorites.some(f => f.id === post.id && f.source === post.source);
-  const mediaEl = document.getElementById('lb-media-area');
-  const sideEl  = document.getElementById('lb-sidebar');
+  const isFaved   = favorites.some(f => f.id === post.id && f.source === post.source);
+  const mediaEl   = document.getElementById('lb-media-area');
+  const sideEl    = document.getElementById('lb-sidebar');
 
   document.getElementById('lb-counter').textContent = `${currentLbIndex + 1} / ${filteredPosts.length}`;
 
-  // Remove previous media content (but keep counter and nav buttons)
+  // Remove old media (keep counter)
   mediaEl.querySelectorAll(':scope > :not(.lb-counter)').forEach(el => el.remove());
 
   const wrap = document.createElement('div');
   wrap.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;';
 
-  if (post.type === 'video' && post.full && !post.isExternal) {
+  if (post.type === 'video' && post.full) {
     wrap.innerHTML = buildVideoPlayer(post);
-  } else if (post.full && !post.isExternal && post.type !== 'video') {
-    wrap.innerHTML = `<img src="${escHtml(post.sample || post.full)}" alt="post ${escHtml(String(post.id))}" style="max-width:100%;max-height:86vh;object-fit:contain"/>`;
+  } else if (post.full) {
+    wrap.innerHTML = `<img src="${escHtml(post.sample || post.full)}" alt="post"
+      style="max-width:100%;max-height:86vh;object-fit:contain"/>`;
   } else {
-    // External or no direct file — show thumb + open button
-    wrap.innerHTML = `
-      <div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:24px;max-width:560px;width:100%;text-align:center">
-        ${post.preview ? `<img src="${escHtml(post.preview)}" alt="" style="max-width:100%;max-height:52vh;object-fit:contain;border-radius:10px;background:var(--bg3)"/>` : ''}
-        ${post.title ? `<div style="font-family:var(--font-head);font-size:1rem;font-weight:700;color:var(--text);line-height:1.3">${escHtml(post.title.slice(0,120))}</div>` : ''}
-        ${post.creator ? `<div style="font-size:0.82rem;color:var(--purple)">@${escHtml(post.creator)}${post.service?' · '+escHtml(post.service):''}</div>` : ''}
-        <a href="${escHtml(post.sourceUrl || '#')}" target="_blank" rel="noopener"
-          style="display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#fff;padding:11px 22px;border-radius:var(--radius);font-family:var(--font-head);font-weight:700;font-size:0.88rem">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-          View on ${PLATFORM_CONFIG[post.source]?.label || post.source}
-        </a>
-      </div>`;
+    wrap.innerHTML = buildExternalCard(post);
   }
 
   if (slideDir) wrap.classList.add(`lb-slide-${slideDir}`);
   mediaEl.appendChild(wrap);
 
-  // Wire up video
+  // Wire video events
   const vid = mediaEl.querySelector('video');
   if (vid) {
-    vid.addEventListener('timeupdate', updateVideoProgress);
-    vid.addEventListener('loadedmetadata', updateVideoProgress);
+    vid.addEventListener('timeupdate',    updateVideoProgress);
+    vid.addEventListener('loadedmetadata',updateVideoProgress);
     vid.addEventListener('play',  () => vid.closest('.video-wrapper')?.classList.remove('paused'));
     vid.addEventListener('pause', () => vid.closest('.video-wrapper')?.classList.add('paused'));
   }
@@ -1980,7 +2117,7 @@ function renderLightboxContent(slideDir) {
   sideEl.innerHTML = `
     <div class="lb-card">
       <h3>Info</h3>
-      ${post.title ? `<div class="lb-stat"><span>Title</span><span style="font-size:0.72rem;max-width:140px;text-align:right;color:var(--text2)">${escHtml(post.title.slice(0,80))}</span></div>` : ''}
+      ${post.title   ? `<div class="lb-stat"><span>Title</span><span style="font-size:0.72rem;max-width:140px;text-align:right;color:var(--text2)">${escHtml(post.title.slice(0,80))}</span></div>` : ''}
       ${post.creator ? `<div class="lb-stat"><span>Creator</span><span style="color:var(--purple)">@${escHtml(post.creator)}</span></div>` : ''}
       ${post.service ? `<div class="lb-stat"><span>Platform</span><span>${escHtml(post.service)}</span></div>` : ''}
       <div class="lb-stat"><span>Source</span><span>${srcName}</span></div>
@@ -1989,23 +2126,43 @@ function renderLightboxContent(slideDir) {
       ${post.width ? `<div class="lb-stat"><span>Size</span><span>${post.width}×${post.height}</span></div>` : ''}
     </div>
     <div class="lb-card">
-      <button class="lb-fav-btn ${isFaved ? 'faved' : ''}" id="lb-fav-btn" onclick="toggleFavoriteLb(${postJson})">
-        <svg viewBox="0 0 24 24" fill="${isFaved ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" id="lb-fav-icon" width="13" height="13"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      <button class="lb-fav-btn ${isFaved ? 'faved' : ''}" id="lb-fav-btn"
+        onclick="toggleFavoriteLb(${postJson})">
+        <svg viewBox="0 0 24 24" fill="${isFaved ? 'currentColor' : 'none'}" stroke="currentColor"
+          stroke-width="2" id="lb-fav-icon" width="13" height="13">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+        </svg>
         <span id="lb-fav-label">${isFaved ? 'Remove Favorite' : 'Add to Favorites'}</span>
       </button>
     </div>
-    ${tagArr.length ? `<div class="lb-card"><h3>Tags</h3><div class="lb-tags">${tagArr.map(t=>`<span class="lb-tag" onclick="closeLightbox();quickTag('${t}')">${escHtml(t.replace(/_/g,' '))}</span>`).join('')}</div></div>` : ''}
+    ${tagArr.length ? `<div class="lb-card"><h3>Tags</h3><div class="lb-tags">${tagArr.map(t =>
+      `<span class="lb-tag" onclick="closeLightbox();quickTag('${t}')">${escHtml(t.replace(/_/g,' '))}</span>`
+    ).join('')}</div></div>` : ''}
     <div class="lb-card">
       <h3>Actions</h3>
       ${post.sourceUrl ? `<a href="${escHtml(post.sourceUrl)}" target="_blank" rel="noopener" class="lb-action-row">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
         View on ${srcName}
       </a>` : ''}
-      ${post.full && post.source !== 'coomer' && post.source !== 'kemono' ? `<a href="${escHtml(post.full)}" download target="_blank" rel="noopener" class="lb-action-row">
+      ${post.full && post.source === 'r34' || post.source === 'e621' ? `<a href="${escHtml(post.full)}" download target="_blank" rel="noopener" class="lb-action-row">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Download original
       </a>` : ''}
     </div>`;
+}
+
+function buildExternalCard(post) {
+  const srcName = PLATFORM_CONFIG[post.source]?.label || post.source;
+  return `<div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:24px;max-width:560px;width:100%;text-align:center">
+    ${post.preview ? `<img src="${escHtml(post.preview)}" alt="" style="max-width:100%;max-height:52vh;object-fit:contain;border-radius:10px;background:var(--bg3)"/>` : ''}
+    ${post.title   ? `<div style="font-family:var(--font-head);font-size:1rem;font-weight:700;color:var(--text);line-height:1.3">${escHtml(post.title.slice(0,120))}</div>` : ''}
+    ${post.creator ? `<div style="font-size:0.82rem;color:var(--purple)">@${escHtml(post.creator)}${post.service?' · '+escHtml(post.service):''}</div>` : ''}
+    <a href="${escHtml(post.sourceUrl || '#')}" target="_blank" rel="noopener"
+      style="display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#fff;padding:11px 22px;border-radius:var(--radius);font-family:var(--font-head);font-weight:700;font-size:0.88rem">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      View on ${srcName}
+    </a>
+  </div>`;
 }
 
 function buildVideoPlayer(post) {
@@ -2013,7 +2170,7 @@ function buildVideoPlayer(post) {
     <video id="lb-vid" src="${escHtml(post.full)}" preload="metadata" playsinline
       onclick="toggleVideo()" style="width:100%;border-radius:var(--radius-lg);cursor:pointer"></video>
     <div class="video-controls" id="vc">
-      <div class="progress-bar-wrap" onclick="seekVideo(event)" onmousemove="seekPreview(event)">
+      <div class="progress-bar-wrap" onclick="seekVideo(event)">
         <div class="progress-bar-fill" id="pb-fill" style="width:0%"></div>
       </div>
       <div class="video-btns">
@@ -2026,9 +2183,12 @@ function buildVideoPlayer(post) {
         <span class="vc-time" id="vc-time">0:00 / 0:00</span>
         <div class="volume-wrap">
           <button class="vc-btn" onclick="toggleMute()" title="Mute">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="vol-icon"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="vol-icon">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/>
+            </svg>
           </button>
-          <input type="range" class="volume-slider" min="0" max="1" step="0.05" value="1" oninput="setVolume(this.value)"/>
+          <input type="range" class="volume-slider" min="0" max="1" step="0.05" value="1"
+            oninput="setVolume(this.value)"/>
         </div>
         <button class="vc-btn" onclick="toggleFullscreen()" title="Fullscreen">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
@@ -2044,7 +2204,6 @@ function buildVideoPlayer(post) {
 function setupLightboxSwipe() {
   let sx = 0, sy = 0, moved = false;
   const lb = document.getElementById('lightbox');
-
   lb.addEventListener('touchstart', e => {
     sx = e.touches[0].clientX; sy = e.touches[0].clientY; moved = false;
   }, {passive:true});
@@ -2053,16 +2212,13 @@ function setupLightboxSwipe() {
     if (!lb.classList.contains('open') || !moved) return;
     const dx = e.changedTouches[0].clientX - sx;
     const dy = e.changedTouches[0].clientY - sy;
-    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 45) {
-      navigateLightbox(dx < 0 ? 1 : -1);
-    } else if (dy > 80 && Math.abs(dx) < 50) {
-      closeLightbox();
-    }
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 45)  navigateLightbox(dx < 0 ? 1 : -1);
+    else if (dy > 80 && Math.abs(dx) < 50)                  closeLightbox();
   }, {passive:true});
 }
 
 /* ═══════════════════════════════════════════════
-   VIDEO CONTROLS — BUG FIX: play icon swaps correctly
+   VIDEO CONTROLS
 ═══════════════════════════════════════════════ */
 const PLAY_SVG  = `<polygon points="5 3 19 12 5 21 5 3"/>`;
 const PAUSE_SVG = `<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>`;
@@ -2071,7 +2227,7 @@ function toggleVideo() {
   const v = document.getElementById('lb-vid');
   if (!v) return;
   if (v.paused) { v.play(); setPlayIcon(false); }
-  else          { v.pause(); setPlayIcon(true); }
+  else          { v.pause(); setPlayIcon(true);  }
 }
 function setPlayIcon(showPlay) {
   const icon = document.getElementById('play-icon');
@@ -2102,18 +2258,16 @@ function updateVideoProgress() {
   const fill = document.getElementById('pb-fill');
   if (fill) fill.style.width = ((v.currentTime / v.duration) * 100) + '%';
   const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-  const t = document.getElementById('vc-time');
+  const t   = document.getElementById('vc-time');
   if (t) t.textContent = `${fmt(v.currentTime)} / ${fmt(v.duration)}`;
-  // keep play icon in sync
   setPlayIcon(v.paused);
 }
 function seekVideo(e) {
   const v = document.getElementById('lb-vid');
-  if (!v) return;
+  if (!v || !v.duration) return;
   const rect = e.currentTarget.getBoundingClientRect();
   v.currentTime = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * v.duration;
 }
-function seekPreview() { /* reserved */ }
 function toggleFullscreen() {
   const vw = document.getElementById('vw');
   if (!vw) return;
@@ -2195,24 +2349,23 @@ function renderFavPanel() {
     <div class="fav-thumb" onclick="openFavLightbox(${i})">
       <img src="${escHtml(post.preview || '')}" loading="lazy" onerror="this.style.opacity=0.2"/>
       <button class="fav-remove" onclick="event.stopPropagation();removeFav(${i})">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
       </button>
     </div>`).join('')}</div>`;
 }
 
 function openFavLightbox(i) {
-  // BUG FIX: save and restore filteredPosts so grid navigation still works after closing
   const savedPosts = filteredPosts;
-  const savedIdx   = currentLbIndex;
-  filteredPosts    = favorites;
-  currentLbIndex   = i;
+  window._favLightboxRestore = () => { filteredPosts = savedPosts; };
+  filteredPosts  = favorites;
+  currentLbIndex = i;
   renderLightboxContent();
   document.getElementById('lightbox').classList.add('open');
   document.body.style.overflow = 'hidden';
-  // Restore on close — we do this by overriding the close for this session
   document.getElementById('favorites-panel').classList.remove('open');
   document.getElementById('panel-backdrop').classList.remove('show');
-  window._favLightboxRestore = () => { filteredPosts = savedPosts; };
 }
 
 function removeFav(i) {
@@ -2266,8 +2419,8 @@ function addUserBlacklistTag() {
   const input = document.getElementById('bl-add-input');
   const tag   = input.value.trim().toLowerCase().replace(/\s+/g,'_');
   if (!tag) return;
-  if (PROTECTED_BLACKLIST.includes(tag)) { showToast('error', 'Already in protected list'); return; }
-  if (userBlacklist.includes(tag))       { showToast('info',  'Already blacklisted');        return; }
+  if (PROTECTED_BLACKLIST.includes(tag))  { showToast('error', 'Already in protected list'); return; }
+  if (userBlacklist.includes(tag))        { showToast('info',  'Already blacklisted');        return; }
   userBlacklist.push(tag);
   localStorage.setItem('nr_blacklist', JSON.stringify(userBlacklist));
   renderUserBlacklist(); input.value = '';
@@ -2284,7 +2437,9 @@ function removeUserBlacklistTag(tag) {
 ═══════════════════════════════════════════════ */
 function setupBackToTop() {
   const btn = document.getElementById('back-to-top');
-  window.addEventListener('scroll', () => { btn.classList.toggle('visible', window.scrollY > 500); }, {passive:true});
+  window.addEventListener('scroll', () => {
+    btn.classList.toggle('visible', window.scrollY > 500);
+  }, {passive:true});
 }
 
 /* ═══════════════════════════════════════════════
@@ -2310,11 +2465,8 @@ document.addEventListener('keydown', e => {
   if (lbOpen) {
     if (e.key === 'ArrowLeft'  || e.key === 'a') navigateLightbox(-1);
     if (e.key === 'ArrowRight' || e.key === 'd') navigateLightbox(1);
-    if (e.key === 'Escape') {
-      closeLightbox();
-      if (window._favLightboxRestore) { window._favLightboxRestore(); window._favLightboxRestore = null; }
-    }
-    if (e.key === ' ') { e.preventDefault(); toggleVideo(); }
+    if (e.key === 'Escape')  closeLightbox();
+    if (e.key === ' ')       { e.preventDefault(); toggleVideo(); }
     if (e.key === 'f' || e.key === 'F') {
       const p = filteredPosts[currentLbIndex];
       if (p) toggleFavoriteLb(p);
